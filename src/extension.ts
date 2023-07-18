@@ -1,64 +1,81 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
+'use strict';
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export async function activate(context: vscode.ExtensionContext) {
-  let disposable = vscode.commands.registerCommand(
-    'sustainable-code.helloWorld',
-    () => {
-      // The code you place here will be executed every time your command is executed
-      // Display a message box to the user
-      vscode.window.showInformationMessage('Hello from Richard');
-    }
+export function activate(context: vscode.ExtensionContext) {
+  const collection = vscode.languages.createDiagnosticCollection('test');
+  if (vscode.window.activeTextEditor) {
+    updateDiagnostics(vscode.window.activeTextEditor.document, collection);
+    updateMemoryLeakDiagnostics(vscode.window.activeTextEditor.document);
+  }
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      if (editor) {
+        updateDiagnostics(editor.document, collection);
+        updateMemoryLeakDiagnostics(editor.document);
+      }
+    })
   );
-
-  context.subscriptions.push(disposable);
-
-  // Create a webview panel
-  const panel = vscode.window.createWebviewPanel(
-    'sustainableCode',
-    'Sustainable Code',
-    vscode.ViewColumn.One,
-    {
-      enableScripts: true,
-    }
-  );
-
-  // Get the path to the bundled React HTML file
-  const bundlePath = path.join(
-    context.extensionPath,
-    'src/view/dist',
-    'index.html'
-  );
-
-  const htmlContent = fs.readFileSync(bundlePath, 'utf8');
-
-  panel.webview.html = htmlContent;
-
-  console.log(panel.webview.html);
-
-  panel.reveal(vscode.ViewColumn.One);
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {}
+function updateDiagnostics(
+  document: vscode.TextDocument,
+  collection: vscode.DiagnosticCollection
+): void {
+  if (document && document.fileName.endsWith('.tsx')) {
+    const text = document.getText();
+    const regex = /\.png/g;
+    const diagnostics: vscode.Diagnostic[] = [];
 
-function getWebviewContent(bundlePath: vscode.Uri) {
-  return `
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>My Extension</title>
-    </head>
-    <body>
-      <iframe src="${bundlePath}" frameborder="0"></iframe>
-    </body>
-    </html>
-  `;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const diagnostic: vscode.Diagnostic = {
+        code: '',
+        message:
+          'PNG image detected. Does it need to be an PNG? If you not need it please use a smaller image type like jpg or webp',
+        range: new vscode.Range(
+          document.positionAt(match.index),
+          document.positionAt(match.index + match[0].length)
+        ),
+        severity: vscode.DiagnosticSeverity.Information,
+        source: 'sustainable-code',
+      };
+
+      diagnostics.push(diagnostic);
+    }
+
+    // Set the collected diagnostics for the document
+    collection.set(document.uri, diagnostics);
+  } else {
+    collection.clear();
+  }
+}
+
+function updateMemoryLeakDiagnostics(document: vscode.TextDocument): void {
+  if (document && document.fileName.endsWith('.tsx')) {
+    const diagnostics: vscode.Diagnostic[] = [];
+    const text = document.getText();
+    const regex = /\bsetInterval\b/gi; // Word "interval" regex with global case-insensitive flag
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      const diagnostic: vscode.Diagnostic = {
+        code: '',
+        message:
+          'Interval is not cleared. - Resource waste, unnecessary execution.',
+        range: new vscode.Range(
+          document.positionAt(match.index),
+          document.positionAt(match.index + match[0].length)
+        ),
+        severity: vscode.DiagnosticSeverity.Information,
+        source: 'Memory Leaks',
+      };
+
+      diagnostics.push(diagnostic);
+    }
+
+    vscode.languages
+      .createDiagnosticCollection('MemoryLeaks')
+      .set(document.uri, diagnostics);
+  }
 }
